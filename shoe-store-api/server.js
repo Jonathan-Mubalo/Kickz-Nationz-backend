@@ -225,7 +225,6 @@ app.get("/productdetail/:productId", async (req, res) => {
 app.post("/selectedproduct", async (req, res) => {
   try {
 
-    // Selecting which collections to access
     const collection = db.collection("Carts");
 
 
@@ -252,9 +251,9 @@ app.post("/selectedproduct", async (req, res) => {
 
     if (existingCart) {
 
-      const arr = existingCart.shoeCart;
+      const arr = existingCart.shoppingCart;
       const newArr = arr.unshift(req.body);
-      const result = await collection.updateOne({ email }, { $set: { shoeCart: arr } });
+      const result = await collection.updateOne({ email }, { $set: { shoppingCart: arr } });
       return res.status(200).json({ message: "Cart has been successfully updated" });
 
     }
@@ -262,7 +261,7 @@ app.post("/selectedproduct", async (req, res) => {
 
       const result = await collection.insertOne({
         email,
-        shoeCart: [{
+        shoppingCart: [{
           productId,
           quantity,
           email,
@@ -277,14 +276,13 @@ app.post("/selectedproduct", async (req, res) => {
         createdAt: new Date()
       });
 
-        const data = await result;
-      console.log( data );
+      const data = await result;
+      console.log(data);
 
-      return res.status(201).json({
-        message: "Shoe cart was created successfully",
-        productId: result.insertedId
+      return res.status(200).json({
+        message: "Wishlist cart was created successfully"
       });
-    
+
     }
   } catch (error) {
     console.error("Error posting product item to cart", error);
@@ -297,32 +295,84 @@ app.post("/selectedproduct", async (req, res) => {
 // End point for posting to your wishlist
 app.post("/wishlist", async (req, res) => {
   try {
-    const { currency, imageUrl, price, productId, productName, selectedColor, selectedSize, userId, wishlistId } = req.body;
-
-
-    if (!productId || !productName) {
-      return res.status(404).json({ message: "Product not in stock" });
-    }
 
     const collection = db.collection("Wishlist");
-    const result = await collection.insertOne({
-      currency,
-      imageUrl,
-      price,
-      productId,
-      productName,
-      selectedColor,
-      selectedSize,
-      userId,
-      wishlistId,
-      createdAt: new Date(),
-    })
+    const { productId, quantity, encodedEmail, productName, productType, productColor, productSize, currency, price, imageUrls, stockQuantity } = req.body;
 
-    res.status(201).json({
-      message: "Product added to wishlist successfully",
-      wishlistId: result.insertedId,
-    });
-  } catch {
+
+    // Decoding the base64 encoded email
+    const email = base64.decode(encodedEmail);
+
+    const user = await collection.findOne({ email });
+
+    if (stockQuantity === 0) {
+      return res.status(404).json({ message: "Shoe not in stock" });
+    }
+
+    // If the user is found inside the wishlist cart we are going to update their wishlistCart 
+    if ( user ) {
+
+      const arr = user.wishlistCart;
+
+      // Adding the shoe to the already existing cart 
+      const newArr = arr.unshift(req.body);
+
+      const response = await collection.updateOne({ email }, { $set: { wishlistCart: arr } });
+
+      return res.status(200).json({ message: "The selected shoe has been successfully added to your wishlist cart" })
+    }
+    else if( !quantity ){
+
+      const response = await collection.insertOne({
+        email,
+        wishlistCart: [{
+          productId,
+          quantity: 0,
+          email,
+          productName,
+          productType,
+          productColor,
+          productSize,
+          currency,
+          imageUrls,
+          stockQuantity
+        }],
+        createdAt: new Date()
+      });
+
+      return res.status(201).json({
+        message: "Product added to wishlist successfully"
+      });
+    } 
+    else {
+      
+      const response = await collection.insertOne({
+        email,
+        wishlistCart: [{
+          productId,
+          quantity,
+          email,
+          productName,
+          productType,
+          productColor,
+          productSize,
+          currency,
+          imageUrls,
+          stockQuantity
+        }],
+        createdAt: new Date()
+      });
+
+      return res.status(201).json({
+        message: "Product added to wishlist successfully"
+      })
+    }
+
+
+
+
+
+  } catch (error) {
     console.error(" Error posting product to wishlist", error);
     res.status(500).json({ message: "Internal server error" });
   }
