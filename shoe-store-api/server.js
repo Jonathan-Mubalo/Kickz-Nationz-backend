@@ -147,24 +147,26 @@ app.post("/login", async (req, res) => {
     const userCollection = await collection.findOne({ email: loginEmail });
 
     if (!userCollection) {
-      return res.status(400).json({userInput: 3, message: "User is not found, sign up?",
-       });
+      return res.status(400).json({
+        userInput: 3, message: "User is not found, sign up?",
+      });
     }
 
-       if (base64.decode(userCollection.password) !== loginPassword) {
-      return res.status(200).json({userInput: 3, message: "Password or email is incorrect" });
+    if (base64.decode(userCollection.password) !== loginPassword) {
+      return res.status(200).json({ userInput: 3, message: "Password or email is incorrect" });
     }
-  
+
     if (base64.decode(userCollection.password) === loginPassword) {
-      
-      return res.status(200).json({ message: "Password is correct",
-          accessTokenUserId: base64.encode(userCollection.userId),
-          // Note to self: The password is now goingto be encoded in base 64 for the second time
+
+      return res.status(200).json({
+        message: "Password is correct",
+        accessTokenUserId: base64.encode(userCollection.email),
+        // Note to self: The password is now going to be encoded in base 64 for the second time
         generatedToken: base64.encode(`${userCollection.email}:${userCollection.password}`)
 
-        })
-      };
-    } catch (error) {
+      })
+    };
+  } catch (error) {
     console.error("Error logging in: ", error);
     res.status(500).json({ message: "Internal server error" });
   }
@@ -189,8 +191,8 @@ app.get("/products", async (req, res) => {
       return res.status(404).json({ message: "No products found" });
     }
 
-  return  res.status(200).json( { message: allProducts });
-  
+    return res.status(200).json({ message: allProducts });
+
   } catch (error) {
     console.error("Error fetching all products", error);
     res.status(500).json({ message: "Internal server Error" });
@@ -200,6 +202,7 @@ app.get("/products", async (req, res) => {
 
 
 // Endpoint for viewing extra information about the product details
+// CURRENTLY DEEMED USELESS
 app.get("/productdetail/:productId", async (req, res) => {
   try {
     const collection = db.collection("Products");
@@ -219,39 +222,70 @@ app.get("/productdetail/:productId", async (req, res) => {
 
 
 // Endpoint for selecting product and adding it to your cart
-app.post("/selectedproducts", async (req, res) => {
+app.post("/selectedproduct", async (req, res) => {
   try {
-    const { productId, quantity, cartId, userId, productName, productColor, productSize, currency, price, imageUrl, quantitiy, subTotal } = req.body;
 
-    //Checking fields for valid information
-    if (!productId) {
-      return res.stataus(400).json({ message: "Product not in stock" });
-    }
-
-    else if (!quantity) {
-      return res.status(400).json({ message: "Need to let us know how many shoes you want to order" });
-    }
-
+    // Selecting which collections to access
     const collection = db.collection("Carts");
-    const result = await collection.insertOne({
-      productId,
-      quantity,
-      cartId,
-      userId,
-      productName,
-      productColor,
-      productSize,
-      currency,
-      price,
-      imageUrl,
-      subTotal,
-      createdAt: new Date(),
-    });
 
-    res.status(201).json({
-      message: "Product was added to cart successfully",
-      productId: result.insertedId,
-    });
+
+    // const productsCollection = db.collection("Products");
+
+
+    const { productId, quantity, encodedEmail, productName, productType, productColor, productSize, currency, price, imageUrls, stockQuantity } = req.body;
+
+    //Checking to see if there are still shoes in stock
+    if (stockQuantity === 0) {
+      return res.status(400).json({ message: "Product is no longer in stock, you cannot order this shoe." });
+    }
+
+    // FINDING THE SHOE THAT NEEDS THE AMOUNT OF SHOES ADDED TO CART TO BE REDUCED
+    //    const productUpdate = await productsCollection.findOne({ productId });
+
+    // const newQuantity = stockQuantity - quantity;
+
+    // const updatingProduct = await productsCollection.updateOne({ {productId}, {$set: { stockQuantity: newQuantity}}  })
+
+    const email = base64.decode(encodedEmail);
+
+    const existingCart = await collection.findOne({ email });
+
+    if (existingCart) {
+
+      const arr = existingCart.shoeCart;
+      const newArr = arr.unshift(req.body);
+      const result = await collection.updateOne({ email }, { $set: { shoeCart: arr } });
+      return res.status(200).json({ message: "Cart has been successfully updated" });
+
+    }
+    else {
+
+      const result = await collection.insertOne({
+        email,
+        shoeCart: [{
+          productId,
+          quantity,
+          email,
+          productName,
+          productType,
+          productColor,
+          productSize,
+          currency,
+          imageUrls,
+          stockQuantity
+        }],
+        createdAt: new Date()
+      });
+
+        const data = await result;
+      console.log( data );
+
+      return res.status(201).json({
+        message: "Shoe cart was created successfully",
+        productId: result.insertedId
+      });
+    
+    }
   } catch (error) {
     console.error("Error posting product item to cart", error);
     res.status(500).json({ message: "Internal server error" });
