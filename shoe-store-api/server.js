@@ -222,16 +222,16 @@ app.get("/productdetail/:productId", async (req, res) => {
 
 
 // Endpoint for selecting product and adding it to your cart
-app.post("/selectedproduct", async (req, res) => {
+app.post("/selectedproduct/:encodedEmail", async (req, res) => {
   try {
 
     const collection = db.collection("Carts");
-
+const { encodedEmail } = req.params
 
     // const productsCollection = db.collection("Products");
 
 
-    const { productId, quantity, encodedEmail, productName, productType, productColor, productSize, currency, price, imageUrls, stockQuantity } = req.body;
+    const { productId, quantity, productName, productType, productColor, productSize, currency, price, imageUrls, stockQuantity } = req.body;
 
     //Checking to see if there are still shoes in stock
     if (stockQuantity === 0) {
@@ -271,7 +271,7 @@ app.post("/selectedproduct", async (req, res) => {
           productSize,
           currency,
           imageUrls,
-          stockQuantity
+          // stockQuantity
         }],
         createdAt: new Date()
       });
@@ -309,25 +309,47 @@ app.post("/wishlist", async (req, res) => {
       return res.status(404).json({ message: "Shoe not in stock" });
     }
 
+    else if (!productSize) {
+
+      return res.status(400).json({
+        message: "Select a shoe size before adding the shoe to your wishlist"
+      });
+    }
+
+
     // If the user is found inside the wishlist cart we are going to update their wishlistCart 
-    if ( user ) {
+
+    else if (user && !quantity) {
 
       const arr = user.wishlistCart;
 
       // Adding the shoe to the already existing cart 
-      const newArr = arr.unshift(req.body);
+      const newArr = arr.unshift({ ...req.body, quantity: 1, addedOn: new Date() });
+
+      const response = await collection.updateOne({ email }, { $set: { wishlistCart: arr, addedOn: new Date() } });
+
+      return res.status(200).json({ message: "The selected shoe has been successfully added to your wishlist cart" })
+    }
+
+    else if (user) {
+
+      const arr = user.wishlistCart;
+
+      // Adding the shoe to the already existing cart 
+      const newArr = arr.unshift({ ...req.body, addedOn: new Date() });
 
       const response = await collection.updateOne({ email }, { $set: { wishlistCart: arr } });
 
       return res.status(200).json({ message: "The selected shoe has been successfully added to your wishlist cart" })
     }
-    else if( !quantity ){
+
+    else if (!quantity) {
 
       const response = await collection.insertOne({
         email,
         wishlistCart: [{
           productId,
-          quantity: 0,
+          quantity: 1,
           email,
           productName,
           productType,
@@ -335,17 +357,18 @@ app.post("/wishlist", async (req, res) => {
           productSize,
           currency,
           imageUrls,
-          stockQuantity
+          stockQuantity,
+          addedOn: new Date()
         }],
         createdAt: new Date()
       });
 
-      return res.status(201).json({
-        message: "Product added to wishlist successfully"
+      return res.status(200).json({
+        message: "Product added to your wishlist successfully"
       });
-    } 
+    }
     else {
-      
+
       const response = await collection.insertOne({
         email,
         wishlistCart: [{
@@ -358,12 +381,13 @@ app.post("/wishlist", async (req, res) => {
           productSize,
           currency,
           imageUrls,
-          stockQuantity
+          stockQuantity,
+          addedOn: new Date()
         }],
         createdAt: new Date()
       });
 
-      return res.status(201).json({
+      return res.status(200).json({
         message: "Product added to wishlist successfully"
       })
     }
@@ -381,16 +405,21 @@ app.post("/wishlist", async (req, res) => {
 
 
 // Endpoint to get my wishlist items
-app.get("/mywishlist/:wishlistId", async (req, res) => {
+app.get("/mywishlist/:encodedEmail", async (req, res) => {
   try {
     const collection = db.collection("Wishlist");
-    const myWishlist = await collection.findOne({ wishlistId: req.params.wishlistId });
+    const { encodedEmail } = req.params;
+
+    const email = base64.decode(encodedEmail);
+    const myWishlist = await collection.findOne({ email });
 
     if (!myWishlist) {
-      return res.status(404).json({ message: "Wishlist not avaialable,add items to wishlist to have one" });
+      return res.status(404).json({ message: "Wishlist not avaialable, add items to your wishlist" });
+    }
+    else {
+      res.status(200).json({ message: myWishlist });
     }
 
-    res.status(201).json(myWishlist);
   } catch (error) {
     console.error("Error getting your wishlist", error);
     res.status(500).json({ message: "Internal server error " });
@@ -399,19 +428,99 @@ app.get("/mywishlist/:wishlistId", async (req, res) => {
 
 
 
-// Endpoint to edit a wishlist with put request
-app.put("/editwishlist/:wishlistId", async (req, res) => {
+//Endpoint used to remove a shoe from the wishlist
+app.post('/removeFromWishlist/:encodedEmail', async (req, res) => {
   try {
 
-    const { selectedColor, selectedSize } = req.body;
+    // CONNECTING TO THE COLLECTION THAT MUST BE USED
     const collection = db.collection("Wishlist");
-    const result = await collection.updateOne({ wishlistId: req.params.wishlistId }, { $set: req.body });
-    const updatedWishlist = await collection.findOne({ wishlistId: req.params.wishlistId });
 
-    if (!updatedWishlist) {
-      return res.status(404).json({ message: "Wishlist item not found" });
+    // Decoding the email to find the users collection and make the update to their collection
+    const { encodedEmail, position } = req.params;
+
+    const email = base64.decode(encodedEmail);
+
+    const user = await collection.findOne({ email });
+
+    if (!user) {
+      return res.status(400).json({ message: "Users wishlist is non-existent" });
     }
-    res.status(200).json({ message: "Wishlist updated successfully", updatedWishlist });
+
+    if (user) {
+
+      // Collecting the array that has all of the shoes found inside of the wishlist
+      const arr = user.wishlistCart;
+
+      const removed = arr.splice(position, 1);
+
+      const update = await collection.updateOne({ email }, { $set: { wishlistCart: arr } });
+
+      return res.status(200).json({ message: `Successfully removed ${removed} from the wishlist` });
+
+    }
+
+  }
+  catch (error) {
+    console.error("There was an error trying to remove a shoe from the wishlist: ", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+})
+
+
+
+// ENDPOINT USED TO ADD A WISHLIST ITEM TO THE CART
+
+
+
+// Endpoint to edit a wishlist with put request by reomving items that were added to a users cart
+app.put("/editwishlist/:encodedEmail", async (req, res) => {
+  try {
+
+    // Getting the array containing the updated shoe item to remove from the wishlist
+    // Also getting the object that should be added to the carts document of the customer
+    const { wishlistCart, shoeObject } = req.body;
+
+    // 
+    const collection = db.collection("Wishlist");
+    const cartsCollection = db.collection("Carts");
+
+    // GETTING THE ACTUAL EMAIL TO FIND THE USERS CART AND MAKE THE NECESSARY CHANGES
+
+    const { encodedEmail } = req.params;
+    const email = base64.decode(encodedEmail);
+
+    // FINDING THE CART AND WISHLIST OF A USER USING THEIR EMAIL
+    const wishlist = await collection.findOne({ email });
+    const cart = await cartsCollection.findOne({ email });
+
+    // Checking to see that users wishlist actually exists before carrying out other actions
+    if (!wishlist) {
+      return res.status(404).json({ message: "Unable to get your wishlist items" });
+    }
+
+    if (!cart) {
+
+      const newCart = await cartsCollection.insertOne({
+        email,
+        shoppingCart: [shoeObject],
+        createdAt: new Date()
+      });
+
+      // DELETING THE ITEM FROM THE WISHLIST DOCUMENT
+      const result = await collection.updateOne({ email }, { $set: { wishlistCart } });
+      return res.status(200).json({ message: "Wishlist updated successfully", result });
+    }
+
+    if (cart) {
+
+      // DESTRUCTURING THE SHOE TO MANUALLY ADDED IT TO THW SHES COLLECTION
+      const { shoppingCart } = cart;
+      const newShoppingCart = shoppingCart.unshift(shoeObject)
+      const existingCart = await cartsCollection.updateOne({ email }, { $set: { shoppingCart } })
+      const result = await collection.updateOne({ email }, { $set: { wishlistCart } });
+      return res.status(200).json({ message: `Wishlist updated successfully, ${shoeObject}` });
+    }
+
 
   } catch (error) {
     console.error("Cannot find the wishlist to edit", error);
