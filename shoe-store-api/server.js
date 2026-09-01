@@ -103,21 +103,15 @@ app.post("/signup", async (req, res) => {
       return res.status(409).json({ userInput: 5, message: "Email already exists" })
     }
 
-    // add user to Users collection only if all conditions are met
-    const counter = await collection.findOne({ userId: "u1" });
-    const newUserId = counter.count + 1;
-
-    const result = await collection.insertOne({
-      userId: "u" + newUserId,
+     const result = await collection.insertOne({
       userName: signupName,
       email: signupEmail,
       password: base64.encode(signupPassword),
       createAt: new Date()
     });
 
-    const counterResult = await collection.updateOne({ userId: "u1" }, { $set: { count: newUserId } })
 
-    res.status(201).json({
+    res.status(200).json({
       message: "User created successfully",
     });
 
@@ -348,6 +342,7 @@ app.post("/wishlist", async (req, res) => {
       const response = await collection.insertOne({
         email,
         wishlistCart: [{
+          price,
           productId,
           quantity: 1,
           email,
@@ -372,6 +367,7 @@ app.post("/wishlist", async (req, res) => {
       const response = await collection.insertOne({
         email,
         wishlistCart: [{
+          price,
           productId,
           quantity,
           email,
