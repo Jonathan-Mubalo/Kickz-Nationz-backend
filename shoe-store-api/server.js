@@ -226,7 +226,7 @@ app.post("/selectedproduct/:encodedEmail", async (req, res) => {
   try {
 
     const collection = db.collection("Carts");
-const { encodedEmail } = req.params
+    const { encodedEmail } = req.params
 
     // const productsCollection = db.collection("Products");
 
@@ -264,14 +264,14 @@ const { encodedEmail } = req.params
         shoppingCart: [{
           productId,
           quantity,
-          email,
           productName,
           productType,
           productColor,
           productSize,
           currency,
+          price,
           imageUrls,
-          // stockQuantity
+          stockQuantity
         }],
         createdAt: new Date()
       });
@@ -531,17 +531,22 @@ app.put("/editwishlist/:encodedEmail", async (req, res) => {
 
 
 // Endpoint to get cart
-app.get("/mycart/:cartId", async (req, res) => {
+app.get("/mycart/:encodedEmail", async (req, res) => {
   try {
 
+    // Getting email to access the right cart from the carts collection
     const collection = db.collection("Carts");
-    const cartItems = await collection.findOne({ cartId: req.params.cartId });
+    const { encodedEmail } = req.params;
+
+    const email = base64.decode(encodedEmail);
+
+    const cartItems = await collection.findOne({ email });
 
     if (!cartItems) {
       return res.status(404).json({ message: "The cart you requested for is unavailable" });
     }
 
-    res.status(201).json(cartItems);
+    return res.status(200).json({ message: cartItems.shoppingCart });
 
   } catch (error) {
     console.error("No cart available", error);
@@ -551,97 +556,66 @@ app.get("/mycart/:cartId", async (req, res) => {
 
 
 
-// Endpoint used to post my cart to my orders collection
-app.post("/postcartinorder", async (req, res) => {
+
+// Endpoint used to edit a cart using a put request
+app.put("/editcart/:encodedEmail", async (req, res) => {
   try {
-    const {
-      imageUrl,
-      userId,
-      orderId,
-      cartId,
-      productId,
-      productName,
-      productColor,
-      productSize,
-      currency,
-      price,
-      quantitiy,
-      subTotal,
-      paymentMethod,
-      fullName,
-      city,
-      province,
-      postalCode,
-      country,
-      paymentStatus,
-      deliveryId,
-      orderStatus,
-      deliveryDate } = req.body;
 
-    if (!paymentStatus) {
-      return res.status(404).json({ message: "Make online payment to place your order" });
+    // Getting the right email so that you can access the right cart
+    const { encodedEmail } = req.params;
+    const email = base64.decode(encodedEmail);
+
+    const { shoppingCart, totalPrice } = req.body;
+    const collection = db.collection("Carts");
+    const result = await collection.updateOne({ email }, { $set: { shoppingCart, totalPrice } });
+    const updatedCart = await collection.findOne({ email });
+
+    if (!updatedCart) {
+      return res.status(404).json({ message: "Cart item not found" });
     }
 
-    if (!fullName || !city || !province || !postalCode || !country) {
-      return res.status(404).json({ message: "Please fill in delivery details" });
+    return res.status(200).json({ message: updatedCart.shoppingCart });
+
+  } catch (error) {
+    console.error("Problem while editting the cart", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+
+
+
+// Endpoint used to post my cart to my orders collection
+app.post("/postcartinorder/:encodedEmail", async (req, res) => {
+  try {
+
+    const ordersCollection = db.collection("Orders");
+    const cartsCollection = db.collection("Carts");
+
+    const { encodedEmail } = req.params;
+
+    // DECODE EMAIL TO ACCESSS THE RIGHT CART
+
+    const email = base64.decode(encodedEmail);
+
+    const cart = await cartsCollection.findOne({ email });
+
+    if (!cart) {
+      return res.status(404).json({ message: "The current cart that you are trying to pay for is not found; please try again later" })
     }
 
-    const collection = db.collection("Orders");
-    const collection2 = db.collection("Deliveries");
-    const result = await collection.insertOne({
-      imageUrl,
-      userId,
-      orderId,
-      cartId,
-      productId,
-      productName,
-      productColor,
-      productSize,
-      currency,
-      price,
-      quantitiy,
-      subTotal,
-      paymentMethod,
-      fullName,
-      city,
-      province,
-      postalCode,
-      country,
-      paymentStatus,
-      createdAt: new Date(),
-    });
+    else {
 
-    const result2 = await collection2.insertOne({
-      imageUrl,
-      userId,
-      orderId,
-      cartId,
-      productId,
-      productName,
-      productColor,
-      productSize,
-      currency,
-      price,
-      quantitiy,
-      subTotal,
-      paymentMethod,
-      fullName,
-      city,
-      province,
-      postalCode,
-      country,
-      paymentStatus,
-      deliveryId,
-      orderStatus,
-      deliveryDate,
-      createdAt: new Date(),
-    })
+      delete cart["_id"]
+      ordersCollection.insertOne({
+        ...cart, ...req.body
+      })
 
-    res.status(201).json({
-      message: "Order is successfully made",
-      orderId: result.insertedId,
-    });
-  } catch {
+      return res.status(200).json({ message: "Cart successfully added to your orders collection", orderId: cart.insertedId });
+
+    }
+
+  } catch (error) {
     console.error(" Error posting cart to order", error);
     res.status(500).json({ message: "Internal server error" });
   }
@@ -649,44 +623,29 @@ app.post("/postcartinorder", async (req, res) => {
 
 
 
-
-// Endpoint used to edit a cart using a put request
-app.put("/editcart/:cartId", async (req, res) => {
-  try {
-
-    const { selectedColor, selectedSize } = req.body;
-    const collection = db.collection("Carts");
-    const result = await collection.updateOne({ cartId: req.params.cartId }, { $set: req.body });
-    const updatedCart = await collection.findOne({ cartId: req.params.cartId });
-
-    if (!updatedCart) {
-      return res.status(404).json({ message: "Cart item not found" });
-    }
-    res.status(200).json({ message: "Cart updated successfully", updatedCart });
-
-  } catch (error) {
-    console.error("Cannot find the wishlist to edit", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
-
-
-
 // Endpoint used to get a delivery status
-app.get("/deliverystatus/:orderId", async (req, res) => {
+app.get("/deliverystatus/:encodedEmail", async (req, res) => {
   try {
 
-    const collection = db.collection("Deliveries");
-    const deliveryStatus = await collection.findOne({ orderId: req.params.orderId });
+    const collection = db.collection("Orders");
+    const { encodedEmail } = req.params;
+
+    // DECODING THE ENCODED EMAIL
+    const email = base64.decode(encodedEmail);
+
+    const currentDeliveryStatus = await collection.find({ email }).toArray();
+    const deliveryStatus = currentDeliveryStatus.reverse();
 
     if (!deliveryStatus) {
-      return res.status(404).json({ message: "No delivery present " });
+      return res.status(404).json({ message: "No delivery currently available" });
     }
-
-    res.status(201).json(deliveryStatus);
+else{
+  console.log(deliveryStatus)
+    res.status(201).json({message: deliveryStatus, insertedId: deliveryStatus["_id"] });
+}
   }
   catch (error) {
-    console.error("Unable to make the request", error);
+    console.error("Unable to collect delivery details", error);
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -697,16 +656,16 @@ app.get("/deliverystatus/:orderId", async (req, res) => {
 app.post("/postforms", async (req, res) => {
 
   try {
-    const { email, subject } = req.body;
+    const { message } = req.body;
     const collection = db.collection("Contact");
 
-    if (!email || !subject) {
-      return res.status(404).json({ message: "Email and subject are required" });
+    if ( !message ) {
+      return res.status(404).json({ message: "Review message is required" });
     }
 
     const result = await collection.insertOne({ ...req.body, createdAt: new Date() });
 
-    res.status(201).json({ message: "Your form has been sent and recieved by admin", formId: result.insertedId });
+    res.status(200).json({ message: "Your form has been sent and recieved by admin", formId: result.insertedId });
   } catch (error) {
     console.error("Unable to send and store the request", error);
     res.status(500).json({ message: "Intenral server error" });
