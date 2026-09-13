@@ -432,7 +432,8 @@ app.post('/removeFromWishlist/:encodedEmail', async (req, res) => {
     const collection = db.collection("Wishlist");
 
     // Decoding the email to find the users collection and make the update to their collection
-    const { encodedEmail, position } = req.params;
+    const { encodedEmail } = req.params;
+    const { position } = req.body;
 
     const email = base64.decode(encodedEmail);
 
